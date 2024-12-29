@@ -12,6 +12,8 @@ import datetime
 import random
 import atexit
 
+from typing import Union, Optional
+
 class TimeRotater:
 
     def _iter_cursor(self, cursor):
@@ -34,7 +36,12 @@ class TimeRotater:
         qmarks = ", ".join(["?" for val in vals])
         cmd = f"INSERT INTO {table}({keys_str}) VALUES({qmarks});"
         res = self.conn.execute(cmd, vals)
+        self.conn.commit()
         return res.lastrowid
+
+    def commit(self):
+        self.conn.commit()
+
 
     def _table_exists(self, table):
         cmd = f"""
@@ -47,7 +54,7 @@ class TimeRotater:
             return False
         return True
 
-    def add_item(self, label: str, dt:datetime.datetime = None):
+    def add_item(self, label: str, dt:Optional[datetime.datetime] = None):
         if not dt:
             dt = datetime.datetime.now()
         item = {
@@ -55,7 +62,7 @@ class TimeRotater:
             "label": label
         }
         self._insert_into("entries", item)
-        self.conn.commit()
+
 
     def update_by_label(self, label:str):
         dt = datetime.datetime.now().timestamp()
@@ -94,7 +101,7 @@ WHERE id = (?) ;
             filename,
             detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES
         )
-        atexit.register(self.conn.close)
+        atexit.register(self.close)
         self.conn.executescript(f"""
 CREATE TABLE IF NOT EXISTS entries (
     id INTEGER PRIMARY KEY,
@@ -104,8 +111,9 @@ CREATE TABLE IF NOT EXISTS entries (
 PRAGMA journal_mode=WAL;
 PRAGMA optimize;
         """)
+        self.conn.commit()
 
-    def get_by_label(self, label:str, update_ts=False):
+    def _get_by_label(self, label:str, update_ts=False):
         cursor = self.conn.execute(f"SELECT * FROM entries WHERE label = (?)", (label,) )
         res = None
         for row in self._iter_cursor(cursor):
@@ -115,7 +123,7 @@ PRAGMA optimize;
         self.update_by_id(res['id'])
         return res
 
-    def get_by_id(self, row_id:id, update_ts=False):
+    def _get_by_id(self, row_id:id, update_ts=False):
         cursor = self.conn.execute(f"SELECT * FROM entries WHERE id = (?)", (row_id,) )
         res = None
         for row in self._iter_cursor(cursor):
@@ -125,6 +133,11 @@ PRAGMA optimize;
         self.update_by_id(res['id'])
         return res
 
+    def get_by_key(self, key: Union[int, str], **kwargs):
+        if isinstance(key, int):
+            return self._get_by_id(key, **kwargs)
+        return self._get_by_label(key, **kwargs)
+    
     def __iter__(self):
         pass
 
@@ -132,23 +145,22 @@ PRAGMA optimize;
         return self
 
     def close(self):
-        atexit.unregister(self.conn.close)
         self.conn.close()
+        atexit.unregister(self.close)
 
     def __exit__(self, type, value, traceback):
         self.close()
         return
 
-    def __getitem__(self, key):
-        if isinstance(key, str):
-            return self.get_by_label(key)
-        elif isinstance(key, int):
-            return self.get_by_id(key)
+    def __getitem__(self, key: Union[int, str]):
+        return get_by_key(key)
 
-        raise KeyError(key)
+    def items(self, ascending=True, update_ts=False):
+        order = "ASC"
+        if not ascending:
+            order = "DESC"
 
-    def items(self, update_ts=False):
-        cursor = self.conn.execute("SELECT * FROM entries ORDER BY time ASC")
+        cursor = self.conn.execute(f"SELECT * FROM entries ORDER BY time {order}")
         for row in self._iter_cursor(cursor):
             if update_ts:
                 self.update_by_id(row['id'])
@@ -158,8 +170,20 @@ PRAGMA optimize;
         for item in self.items(update_ts=False):
             yield item
 
-    def __contains__(self, label: str):
-        res = self.get_by_label(label)
+    def __contains__(self, key: Union[int, str]):
+        res = self.get_by_key(key)
         if res:
             return True
         return False
+
+    def __delitem__(self, key: Union[int, str]):
+        row = self.get_by_key(key)
+        if not row:
+            raise KeyError(key)
+        row_id = row['id']
+        result = self.conn.execute("""
+DELETE FROM entries WHERE id = (?)
+        """, (row_id,))
+        result.fetchone()
+        self.conn.commit()
+        return
