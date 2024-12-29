@@ -18,7 +18,6 @@ class TimeRotater:
         desc = [row[0] for row in cursor.description]
         for row in cursor.fetchall():
             val = {key: val for key, val in zip(desc, row)}
-            print(val)
             val['time'] = datetime.datetime.fromtimestamp(val['time'])
             yield val
 
@@ -34,14 +33,15 @@ class TimeRotater:
         vals_str = ", ".join([str(val) for val in vals])
         qmarks = ", ".join(["?" for val in vals])
         cmd = f"INSERT INTO {table}({keys_str}) VALUES({qmarks});"
-        return self.conn.execute(cmd, vals)
+        res = self.conn.execute(cmd, vals)
+        return res.lastrowid
 
     def _table_exists(self, table):
         cmd = f"""
         SELECT name FROM sqlite_master
-        WHERE type='table' AND name="{table}";
+        WHERE type='table' AND name=?;
         """
-        cursor = self.conn.execute(cmd)
+        cursor = self.conn.execute(cmd, table)
         res = cursor.fetchall()
         if len(res) == 0:
             return False
@@ -57,35 +57,33 @@ class TimeRotater:
         self._insert_into("entries", item)
         self.conn.commit()
 
+    def update_by_label(self, label:str):
+        dt = datetime.datetime.now().timestamp()
+        self.conn.execute(f"""
+UPDATE entries
+SET time = '{dt}'
+WHERE label = (?) ;
+        """, (label,))
+        self.conn.commit()
+        return
+
     def update_by_id(self, ent_id:int):
         dt = datetime.datetime.now().timestamp()
         self.conn.execute(f"""
 UPDATE entries
 SET time = '{dt}'
-WHERE id = {ent_id} ;
-        """)
+WHERE id = (?) ;
+        """, (ent_id,) )
         self.conn.commit()
         return
 
-    def get_oldest(self, update_ts=True):
+    def get_oldest(self, update_ts=False):
         '''
-        Gets the oldest entry, updates its timestamp
+        Gets the oldest entry
         '''
         cursor = self.conn.execute("SELECT *, min(time) from entries;")
         result = next(self._iter_cursor(cursor))
         result.pop('min(time)', None)
-        if not update_ts:
-            return result[0]
-        self.update_by_id(result['id'])
-        return result
-
-
-    def get_by_id(self, ent_id: int, update_ts=True):
-        '''
-        Gets the oldest entry)
-        '''
-        cursor = self.conn.execute(f"SELECT * FROM entries WHERE id = {ent_id}")
-        result = next(self._iter_cursor(cursor))
         if not update_ts:
             return result
         self.update_by_id(result['id'])
@@ -107,8 +105,29 @@ PRAGMA journal_mode=WAL;
 PRAGMA optimize;
         """)
 
+    def get_by_label(self, label:str, update_ts=False):
+        cursor = self.conn.execute(f"SELECT * FROM entries WHERE label = (?)", (label,) )
+        res = None
+        for row in self._iter_cursor(cursor):
+            res = row
+        if not res or not update_ts:
+            return res
+        self.update_by_id(res['id'])
+        return res
+
+    def get_by_id(self, row_id:id, update_ts=False):
+        cursor = self.conn.execute(f"SELECT * FROM entries WHERE id = (?)", (row_id,) )
+        res = None
+        for row in self._iter_cursor(cursor):
+            res = row
+        if not res or not update_ts:
+            return res
+        self.update_by_id(res['id'])
+        return res
+
     def __iter__(self):
         pass
+
     def __enter__(self):
         return self
 
@@ -120,7 +139,27 @@ PRAGMA optimize;
         self.close()
         return
 
-    def __iter__(self):
+    def __getitem__(self, key):
+        if isinstance(key, str):
+            return self.get_by_label(key)
+        elif isinstance(key, int):
+            return self.get_by_id(key)
+
+        raise KeyError(key)
+
+    def items(self, update_ts=False):
         cursor = self.conn.execute("SELECT * FROM entries ORDER BY time ASC")
         for row in self._iter_cursor(cursor):
+            if update_ts:
+                self.update_by_id(row['id'])
             yield row
+
+    def __iter__(self):
+        for item in self.items(update_ts=False):
+            yield item
+
+    def __contains__(self, label: str):
+        res = self.get_by_label(label)
+        if res:
+            return True
+        return False

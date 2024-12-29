@@ -23,7 +23,7 @@ def test_time_rotator():
         rotator.add_item(lbl)
 
     for i in range(0, 25):
-        row = rotator.get_oldest()
+        row = rotator.get_oldest(update_ts=True)
         lbl = item_lbls[i % len(item_lbls)]
         assert row['label'] == lbl
 
@@ -34,23 +34,23 @@ def test_time_rotator():
     for i in range(0, 25):
         lbl = item_lbls[i % len(item_lbls)]
         with tr.timerotator.TimeRotater(tmpfile) as rotator:
-            item = rotator.get_oldest()
+            item = rotator.get_oldest(update_ts=True)
             assert item['label'] == lbl
 
     for i in range(0, 25):
         lbl = item_lbls[i % len(item_lbls)]
         with tr.timerotator.TimeRotater(tmpfile) as rotator:
-            item = rotator.get_oldest()
+            item = rotator.get_oldest(update_ts=True)
             assert item['label'] == lbl
 
     ##################################################################
     rotator = tr.timerotator.TimeRotater(tmpfile)
 
-    row1 = rotator.get_by_id(5)
+    row1 = rotator.get_by_id(5, update_ts=True)
     time.sleep(0.1)
     row2 = rotator.get_by_id(5, update_ts=False)
     time.sleep(0.1)
-    row3 = rotator.get_by_id(5)
+    row3 = rotator.get_by_id(5, update_ts=True)
 
     assert  row1['label'] == "Item_4" and row2['label'] == "Item_4"
     assert row1['time'] < row2['time']
@@ -65,3 +65,12 @@ def test_time_rotator():
         dt = row['time']
         assert dt > t0
         t0 = dt
+
+    # Test __contains__
+    assert "Item_0" in rotator
+    assert not "ASDF" in rotator
+    assert rotator.get_by_id(1)['label'] == "Item_0"
+
+
+
+    breakpoint()
