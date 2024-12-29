@@ -8,7 +8,7 @@ requires = ["setuptools", "wheel"]
 
 # https://setuptools.readthedocs.io/en/latest/setuptools.html#configuring-setup-using-setup-cfg-files
 [project]
-name = "mymodule"
+name = "timerotater"
 version = "1.0.0"
 description = "A python module"
 readme = "README.md"
@@ -22,9 +22,9 @@ dependencies = [
   "json5>=0.9.25"
 ]
 
-[project.scripts]
+#[project.scripts]
 # Makes 'spam-cli' an executable on PATH
-spam-cli = "module0.util:replace_me"
+#spam-cli = "module0.util:replace_me"
 
 [project.urls]
 Homepage = "https://example.com"
