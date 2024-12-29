@@ -12,8 +12,16 @@ import datetime
 import random
 import atexit
 
-
 class TimeRotater:
+
+    def _iter_cursor(self, cursor):
+        desc = [row[0] for row in cursor.description]
+        for row in cursor.fetchall():
+            val = {key: val for key, val in zip(desc, row)}
+            print(val)
+            val['time'] = datetime.datetime.fromtimestamp(val['time'])
+            yield val
+
     def _insert_into(self, table: str, item: dict):
         keys = []
         vals = []
@@ -39,26 +47,18 @@ class TimeRotater:
             return False
         return True
 
-    def __iter__(self):
-        cursor = self.conn.execute("")
-        #rows = conn.execute("PRAGMA table_info();")
-        desc = [row[0] for row in cursor.description]
-        for row in cursor.fetchall():
-            yield {key: val for key, val in zip(desc, row)}
-
-
     def add_item(self, label: str, dt:datetime.datetime = None):
         if not dt:
             dt = datetime.datetime.now()
         item = {
-            "time": datetime.datetime.now(),
+            "time": dt.timestamp(),
             "label": label
         }
         self._insert_into("entries", item)
         self.conn.commit()
 
     def update_by_id(self, ent_id:int):
-        dt = datetime.datetime.now()
+        dt = datetime.datetime.now().timestamp()
         self.conn.execute(f"""
 UPDATE entries
 SET time = '{dt}'
@@ -69,15 +69,15 @@ WHERE id = {ent_id} ;
 
     def get_oldest(self, update_ts=True):
         '''
-        Gets the oldest entry)
+        Gets the oldest entry, updates its timestamp
         '''
         cursor = self.conn.execute("SELECT *, min(time) from entries;")
-        result = cursor.fetchall()
-        (ent_id, ent_ts, ent_lbl, _) = result[0]
+        result = next(self._iter_cursor(cursor))
+        result.pop('min(time)', None)
         if not update_ts:
             return result[0]
-        self.update_by_id(ent_id)
-        return (ent_id, ent_ts, ent_lbl)
+        self.update_by_id(result['id'])
+        return result
 
 
     def get_by_id(self, ent_id: int, update_ts=True):
@@ -85,10 +85,10 @@ WHERE id = {ent_id} ;
         Gets the oldest entry)
         '''
         cursor = self.conn.execute(f"SELECT * FROM entries WHERE id = {ent_id}")
-        result = cursor.fetchall()[0]
+        result = next(self._iter_cursor(cursor))
         if not update_ts:
             return result
-        self.update_by_id(result[0])
+        self.update_by_id(result['id'])
         return result
 
     def __init__(self, filename):
@@ -119,3 +119,8 @@ PRAGMA optimize;
     def __exit__(self, type, value, traceback):
         self.close()
         return
+
+    def __iter__(self):
+        cursor = self.conn.execute("SELECT * FROM entries ORDER BY time ASC")
+        for row in self._iter_cursor(cursor):
+            yield row

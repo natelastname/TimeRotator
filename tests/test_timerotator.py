@@ -11,10 +11,11 @@ import tempfile
 import time
 import datetime
 
+
 def test_time_rotator():
     tmpfile = tempfile.mktemp(".tr")
     rotator = tr.timerotator.TimeRotater(tmpfile)
-
+    print(tmpfile)
     item_lbls = []
     for i in range(0, 5):
         lbl = f"Item_{i}"
@@ -24,7 +25,7 @@ def test_time_rotator():
     for i in range(0, 25):
         row = rotator.get_oldest()
         lbl = item_lbls[i % len(item_lbls)]
-        assert row[2] == lbl
+        assert row['label'] == lbl
 
     rotator.close()
     ##################################################################
@@ -33,24 +34,34 @@ def test_time_rotator():
     for i in range(0, 25):
         lbl = item_lbls[i % len(item_lbls)]
         with tr.timerotator.TimeRotater(tmpfile) as rotator:
-            (ent_id, ent_ts, ent_lbl) = rotator.get_oldest()
-            assert ent_lbl == lbl
+            item = rotator.get_oldest()
+            assert item['label'] == lbl
 
     for i in range(0, 25):
         lbl = item_lbls[i % len(item_lbls)]
         with tr.timerotator.TimeRotater(tmpfile) as rotator:
-            (ent_id, ent_ts, ent_lbl) = rotator.get_oldest()
-            assert ent_lbl == lbl
+            item = rotator.get_oldest()
+            assert item['label'] == lbl
 
     ##################################################################
     rotator = tr.timerotator.TimeRotater(tmpfile)
 
-    (_, ts1, lbl1) = rotator.get_by_id(5)
+    row1 = rotator.get_by_id(5)
     time.sleep(0.1)
-    (_, ts2, lbl2) = rotator.get_by_id(5, update_ts=False)
+    row2 = rotator.get_by_id(5, update_ts=False)
     time.sleep(0.1)
-    (_, ts3, lbl3) = rotator.get_by_id(5)
+    row3 = rotator.get_by_id(5)
 
-    assert  lbl1 == "Item_4" and lbl2 == "Item_4"
-    assert datetime.datetime.fromisoformat(ts1) < datetime.datetime.fromisoformat(ts2)
-    assert ts2 == ts3
+    assert  row1['label'] == "Item_4" and row2['label'] == "Item_4"
+    assert row1['time'] < row2['time']
+    assert row2['time'] == row3['time']
+
+    ##################################################################
+    # Test __iter__
+    ##################################################################
+    rotator = tr.timerotator.TimeRotater(tmpfile)
+    t0 = datetime.datetime.now() - datetime.timedelta(hours=1)
+    for row in rotator:
+        dt = row['time']
+        assert dt > t0
+        t0 = dt
