@@ -5,12 +5,8 @@ Created on 2024-12-28T18:11:34-05:00
 
 @author: nate
 """
-#import shelve
-#import pydantic
-#from pydantic import BaseModel, Field, WithJsonSchema
-#from typing import Sequence, Any, Callable, Hashable
-import os
 
+import os
 import sqlite3
 import datetime
 import random
@@ -82,6 +78,18 @@ WHERE id = {ent_id} ;
             return result[0]
         self.update_by_id(ent_id)
         return (ent_id, ent_ts, ent_lbl)
+
+
+    def get_by_id(self, ent_id: int, update_ts=True):
+        '''
+        Gets the oldest entry)
+        '''
+        cursor = self.conn.execute(f"SELECT * FROM entries WHERE id = {ent_id}")
+        result = cursor.fetchall()[0]
+        if not update_ts:
+            return result
+        self.update_by_id(result[0])
+        return result
 
     def __init__(self, filename):
         self.conn = sqlite3.connect(
